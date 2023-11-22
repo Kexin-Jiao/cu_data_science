@@ -1,0 +1,234 @@
+---
+title: "Data Analysis of NYPD Shooting Incident Data (Historic)_KJ"
+author: "Kexin Jiao"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r import packages, echo=FALSE}
+library(tidyverse)
+library(wesanderson)
+```
+
+This is a manually extracted data listing all the shooting incidents that occurred in NYC between 2006 and 2022. 
+NYPD Shooting Incident Data (Historic).[CSV file](https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD)
+
+```{r import data and quick view}
+data_url<-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+df<-read.csv(data_url)
+```
+
+## 1. Data rangling
+
+### 1) Quick view of the data structure
+
+```{r quick view of the data frame}
+head(df)
+```
+
+### 2) Remove the columns that are not related to our analysis
+
+We plan to visualize and analyze the dependence of shooting cases on year and borough zones. There are several columns in the data frame that are not highly related to our goal, for example, the latitude and the longitude where the shooting happened. We will first of all remove those irrelated columns.
+
+```{r drop columns that are not needed}
+df_cln<-df %>% select(-c("LOC_CLASSFCTN_DESC","LOCATION_DESC","X_COORD_CD","Y_COORD_CD","Latitude","Longitude","Lon_Lat"))
+str(df_cln)
+```
+
+### 3) Remove empty values, null values, or nonsense values
+
+Some columns in this data frame contain too many empty (>10% by number) values and/or null values. We will remove those columns before further data cleaning steps.
+After that, we will delete the rows that have empty, null, or nonsense values to completely clean the data frame.
+Finally, we will convert the occur date of shooting into standerized date-time format.
+
+```{r drop columns that have too many missing values and drop empty values in the rest columns}
+for (i in colnames(df_cln)) {
+  l=length(df_cln[,i][df_cln[,i] != ""] %>% .[. != "(null)"] %>% .[. != "UNKNOWN"])
+  #remove the columns contain too many (>10%) empty or null values
+  if (l<=25000) {
+    df_cln[,i]<-NULL
+  }else if (l<nrow(df_cln)) {
+  # remove the rows having empty and null values in the rest columns
+    df_cln<-subset(df_cln,df_cln[,i]!="UNKNOWN")
+   }
+}
+#remove the weird values that do not make sense
+unique(df_cln$VIC_AGE_GROUP)
+x<-which(grepl("1022",df_cln$VIC_AGE_GROUP))
+df_cln<-df_cln[-x,]
+#convert occur date into data-time format
+df_cln<-df_cln %>% mutate(OCCUR_DATE=mdy(OCCUR_DATE))
+
+str(df_cln)
+```
+
+### 4) Extract the year number from OCCUR_DATE and save it to a new column
+
+```{r extract year number from OCCUR_DATE}
+df_cln$YEAR<-as.numeric(format(df_cln$OCCUR_DATE,"%Y"))
+
+str(df_cln)
+```
+
+## 2. Data visualization
+
+### 1) Plotting of shooting cases that happened in each borough per year 
+
+Create data frames grouped by borough and year.
+
+```{r cases by borough per year}
+df_by_Borough_Year<-df_cln %>%
+  group_by(BORO,YEAR) %>%
+  tally() %>%
+  mutate(CASES=n) %>%
+  select(-n)
+head(df_by_Borough_Year)
+```
+
+plot the number of shooting cases for each borough as a function of year.
+
+```{r plotting of cases by borough per year}
+df_BRONX<-subset(df_by_Borough_Year,df_by_Borough_Year[,"BORO"]=="BRONX")
+df_BROOKLYN<-subset(df_by_Borough_Year,df_by_Borough_Year[,"BORO"]=="BROOKLYN")
+df_MANHATTAN<-subset(df_by_Borough_Year,df_by_Borough_Year[,"BORO"]=="MANHATTAN")
+df_QUEENS<-subset(df_by_Borough_Year,df_by_Borough_Year[,"BORO"]=="QUEENS")
+df_STATEN_ISLAND<-subset(df_by_Borough_Year,df_by_Borough_Year[,"BORO"]=="STATEN ISLAND")
+
+
+color_A<-c("BRONX"="maroon","BROOKLYN"="springgreen4","MANHATTAN"="steelblue","QUEENS"="red","STATEN ISLAND"="gold")
+ggplot()+
+  geom_line(data=df_BRONX,aes(x=YEAR,y=CASES,color="BRONX"),linewidth=1)+
+  geom_point(data=df_BRONX,aes(x=YEAR,y=CASES,color="BRONX"),size=3)+
+  geom_line(data=df_BROOKLYN,aes(x=YEAR,y=CASES,color="BROOKLYN"),linewidth=1)+
+  geom_point(data=df_BROOKLYN,aes(x=YEAR,y=CASES,color="BROOKLYN"),size=3)+
+  geom_line(data=df_MANHATTAN,aes(x=YEAR,y=CASES,color="MANHATTAN"),linewidth=1)+
+  geom_point(data=df_MANHATTAN,aes(x=YEAR,y=CASES,color="MANHATTAN"),size=3)+
+  geom_line(data=df_QUEENS,aes(x=YEAR,y=CASES,color="QUEENS"),linewidth=1)+
+  geom_point(data=df_QUEENS,aes(x=YEAR,y=CASES,color="QUEENS"),size=3)+
+  geom_line(data=df_STATEN_ISLAND,aes(x=YEAR,y=CASES,color="STATEN ISLAND"),linewidth=1)+
+  geom_point(data=df_STATEN_ISLAND,aes(x=YEAR,y=CASES,color="STATEN_ISLAND"),size=3)+
+  
+  labs(title="Cases in every year in each boroughs",x="Year",y="Cases",color="Legend",tag="A")+
+  scale_color_manual(name="NYPD Boroughs", values=color_A)
+
+```
+
+Figure A shows the number of cases of shooting happened in each borough per year.An overall decreasing trend of cases before 2019 and a sudden increase after 2020 for most of the boroughs expect STATEN ISLAND are observed.
+
+### 2) plotting of cases of shooting as a function of borough
+
+Create data frames grouped by borough.
+
+```{r cases by borough}
+df_by_Borough<-df_cln %>%
+  group_by(BORO) %>%
+  tally() %>%
+  mutate(CASES=n) %>%
+  select(-n)
+head(df_by_Borough)
+```
+
+plot the number of shooting cases as a function of borough.
+
+```{r plotting of cases by borough}
+ggplot(data=df_by_Borough,aes(x=BORO,y=CASES))+
+  geom_bar(stat="identity",fill=color_A,width=0.5)+
+  labs(title="Total Cases In Each Borough",x="Boroughs",y="Cases",tag="B")
+```
+
+Figure B shows the total shooting cases happened in each borough from 2006 to 2022.BROOKLYN has the greatest number of shooting cases while Staten Island has the smallest number of shooting cases.
+
+### 3) plotting of cases of shooting as a function of year
+
+Create data frames grouped by year.
+
+```{r cases by year}
+df_by_Year<-df_cln %>%
+  group_by(YEAR) %>%
+  tally() %>%
+  mutate(CASES=n) %>%
+  select(-n)
+head(df_by_Year)
+```
+
+plot the number of shooting cases as a function of year.
+
+```{r plotting of case by year}
+ggplot(data=df_by_Year,aes(x=YEAR,y=CASES))+
+  geom_bar(stat="identity",fill="steelblue",width=0.3)+
+  labs(title="Total Cases In Each Year",x="Years",y="Cases",tag="C")
+```
+
+Figure C clearly reveals the decreasing of total shooting cases per year from 2006 to 2019 and a sudden increase at 2020. We would attribute this change to two factors. First, the global COVID-19 panic since early 2020 significantly affect the economy in NYC.The increased number of unemployment and the fatal health risk may negatively affect and destruct the socialeconomic structure in NYC and result in increased crime rate. Second, the NYPD's budget has been reduced by about $1 billion between fiscal years 2020 and 2021.One may expect a reduced level of patrol strength throughout the communities which may lead to the increased number shooting cases.Further investigation and data are required to support of deny out assumption.
+
+## 3. Data Analysis
+
+### The maximum, minimum, and average number of shooting cases in each year
+
+```{r analysis of max, min, and average cases by borough}
+df_by_Year_Borough<-df_cln %>% 
+  group_by(YEAR,BORO) %>% 
+  tally() %>%
+  mutate(CASES=n) %>%
+  select(-n)
+
+years<-unique(df_by_Year$YEAR)
+max_cases<-tapply(df_by_Year_Borough$CASES,df_by_Year_Borough$YEAR,max)
+min_cases<-tapply(df_by_Year_Borough$CASES,df_by_Year_Borough$YEAR,min)
+avg_cases<-tapply(df_by_Year_Borough$CASES,df_by_Year_Borough$YEAR,mean)
+max_boroughs<-rep("a",17)
+min_boroughs<-rep("b",17)
+df_case_by_year_analysis<-cbind(avg_cases,max_cases,min_cases)
+df_case_by_year_analysis<-cbind(years,df_case_by_year_analysis)
+rownames(df_case_by_year_analysis)=1:17
+df_case_by_year_analysis<-as.data.frame(df_case_by_year_analysis)
+
+for (i in 1:17){
+  max_boroughs[i]<-df_by_Year_Borough$BORO[which(df_by_Year_Borough$YEAR==df_case_by_year_analysis$years[i] & df_by_Year_Borough$CASES==df_case_by_year_analysis$max_cases[i])]
+  min_boroughs[i]<-df_by_Year_Borough$BORO[which(df_by_Year_Borough$YEAR==df_case_by_year_analysis$years[i] & df_by_Year_Borough$CASES==df_case_by_year_analysis$min_cases[i])]
+}
+df_case_by_year_analysis<-cbind(df_case_by_year_analysis,max_boroughs,min_boroughs)
+df_case_by_year_analysis
+
+```
+
+The data frame lists the maximum, minimum, and average number of shooting cases happened in each year. The boroughs that have the maximum and minimum cases are shown. We found that the borough Staten Island always holds the least shooting cases from 2016 to 2022 while the borough Brooklyn always has the most cases except year 2021. This is clear evidence that reveals the social security level difference between different boroughs in NYC. Many factors, for example, community economy, population composition, and education level may affect the local criminal level.  Further research are required for an detailed explanation.
+
+## 4. Modeling for the trend of the number of shooting cases in BRONX
+
+We investigated the change of number of shooting cases in BROOKLYN from 2006 to 2019, which is the year right before COCID-19 panic started (2020). It is found that although BROOKLYN has the highest number of cases, it decreased by years steadily. We used a linear model to fit this trend which will be reported in the coming section.
+
+```{r linear fitting of the trend of cases in BROOKLYN from 2006 to 2019}
+df_lm_BROOKLYN<-subset(df_BROOKLYN,df_BROOKLYN$YEAR<=2019)
+mod_BROOKLYN<-lm(data=df_lm_BROOKLYN,CASES~YEAR)
+summary(mod_BROOKLYN)
+```
+
+According to the summary, a decrease rate of about -41.5 cases/year (the slope of the straight line in Figure D) was determined with a reasonable p-value.
+
+```{r plotting of the fitted data}
+df_lm_BROOKLYN<-df_lm_BROOKLYN %>% mutate(Predicted=predict(mod_BROOKLYN))
+color_D<-c("BROOKLYN"="steelblue","Predicted"="maroon")
+ggplot()+
+  geom_point(data=df_lm_BROOKLYN,aes(x=YEAR,y=CASES,color="BROOKLYN"),size=3)+
+  geom_line(data=df_lm_BROOKLYN,aes(x=YEAR,y=CASES,color="BROOKLYN"),linewidth=1)+
+  geom_point(data=df_lm_BROOKLYN,aes(x=YEAR,y=Predicted,color="Predicted"),size=3)+
+  geom_line(data=df_lm_BROOKLYN,aes(x=YEAR,y=Predicted,color="Predicted"),linewidth=1)+
+  labs(title="Observation and Prediction of the Cases in BROOKLYN",x="Year",y="Cases",color="Legend",tag="D")+
+  scale_color_manual(name="Observation vs \n Prediction",values=color_D)
+```
+
+Figure D shows a good fitting of the predicted data for the original data of BROOKLYN between 2006 and 2019. It is reasonable to predict that the shooting cases will decrease again after COVID-19 panic completely ended if the NYC or BROOKLYN will follow what they have done between 2006 and 2019.
+
+## 5. Discussion of possible bias in the data and analysis
+
+1. The data was manually extracted from local reports. The number of reports may be dependent on the tendency that the local people would like to report to police and the local available police service.
+2. The data only contains the shooting cases reported in NYC, it may not be able to reflect an overall crime situation in diferent boroughs.
+3. During the COVID-19 panic (after 2019), the efficiency of report collecting may be varied due to the lack of common resource, which may affect the consistency of data.
+4. A linear fitting of the cases number before 2019 may not reflect the real trend.
